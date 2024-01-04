@@ -8,7 +8,7 @@ Created on Fri Nov  21 17:26:27 2023
 import numpy as np
 from collections import deque
 import copy
-
+import math
 from tqdm import tqdm
 
 class amm():
@@ -68,11 +68,10 @@ class amm():
         # ********************
         #     fill in code
         # ********************
-        y = np.zeros(len(x))
-        for i in range(len(x)):
-            y[i] = (x[i]*(1-self.phi[i])*self.Ry[i])/(self.Rx[i]+(1-self.phi[i])*x[i])
-            self.Rx[i] += x[i]
-            self.Ry[i] -= y[i]
+        y = (x*(1-self.phi)*self.Ry)/(self.Rx+(1-self.phi)*x)
+        if quote==False:
+            self.Rx += x
+            self.Ry -= y
         return y
 
     def swap_y_to_x(self, y, quote=False):
@@ -99,10 +98,10 @@ class amm():
         #     fill in code
         # ********************
         x = np.zeros(len(y))
-        for i in range(len(y)):
-            x[i] = (y[i]*(1-self.phi[i])*self.Rx[i])/(self.Ry[i]+(1-self.phi[i])*y[i])
-            self.Rx[i] -= x[i]
-            self.Ry[i] += y[i]
+        x = (y*(1-self.phi)*self.Rx)/(self.Ry+(1-self.phi)*y)
+        if quote==False:
+            self.Rx -= x
+            self.Ry += y
         return x
 
     def mint(self, x, y):
@@ -129,11 +128,10 @@ class amm():
         # ********************
         #     fill in code
         # ********************
-        for i in range(len(x)):
-            self.l[i] = (x[i]*self.L[i])/self.Rx[i]
-            self.Rx[i] += x[i]
-            self.Ry[i] += y[i]
-            self.L[i] += self.l[i]
+        self.l = (x*self.L)/self.Rx
+        self.Rx += x
+        self.Ry += y
+        self.L += self.l
         return self.l
 
     def swap_and_mint(self, x):
@@ -156,7 +154,11 @@ class amm():
         # ********************
         #     fill in code
         # ********************
-
+        theta=1+((2-self.phi)*self.Rx/(2*(1-self.phi)*np.array(x)))*(1-np.sqrt(1+4*np.array(x)*(1-self.phi)/(self.Rx*(2-self.phi)**2)))
+        xt=(1-theta)*np.round(np.array(x),2)
+        y = self.swap_x_to_y(xt)
+        yt=theta*np.round(np.array(x), 2)*self.Ry/self.Rx
+        l = self.mint(theta*np.round(np.array(x), 2),  yt)
         return l
     
     def burn_and_swap(self, l):
@@ -178,7 +180,16 @@ class amm():
         # ********************
         #     fill in code
         # ********************
-
+        x, y = np.zeros(len(self.l)), np.zeros(len(self.l))
+        x, y = self.burn(l)
+        check_x = np.zeros(len(x))
+        check_x = self.swap_y_to_x(y,True)
+        max_index = np.argmax(check_x)
+        total_y = np.sum(y)
+        y = np.zeros(len(self.l))
+        y[max_index] = total_y
+        xo = self.swap_y_to_x(y)
+        total_x = np.sum(xo)+np.sum(x)
         return total_x
 
     def burn(self, l):
@@ -205,7 +216,14 @@ class amm():
         # ********************
         #     fill in code
         # ********************
-        
+        arr_len = len(l)
+        x, y = np.zeros(arr_len), np.zeros(arr_len)
+        x = (l*self.Rx)/self.L
+        y = (l*self.Ry)/self.L
+        self.Rx -= x
+        self.Ry -= y
+        self.L -= l
+        self.l -= l
         return x, y
 
     def simulate(self, kappa, p, sigma, T=1, batch_size=256):
@@ -325,3 +343,4 @@ class amm():
             event_direction_t[k] = event_direction
 
         return pools, Rx_t, Ry_t, v_t, event_type_t, event_direction_t
+
